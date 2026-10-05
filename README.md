@@ -1,4 +1,4 @@
-```markdown
+
 # Privacy-Preserving Clinical with Federated Learning
 
 This project is a clinical AI challenge solution that performs three tasks:
@@ -24,7 +24,7 @@ These results are based on a small public synthetic validation dataset and shoul
 
 ## Project Structure
 
-```text
+
 .
 ├── data/                   # Training and validation data
 ├── evaluator/              # Benchmark evaluation script
