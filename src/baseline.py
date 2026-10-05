@@ -29,7 +29,7 @@ PII_PATTERNS = {
     "ADDRESS": [
         
         # The contact heading can be written with or without ":".
-        r"(?i)(?:address|residence|home)\s*[:=]?\s*(.+?)(?=\s*(?:\||;|\n|(?:telephone|mobile|contact|phone|ph)\s*[:=]?))",
+        r"(?i)(?:address|residence|home)\s*[:=]?\s*(.+?)(?=\s*(?:\||;|\n|(?:telephone|mobile|contact|phone|ph|treating clinician|attending physician|consultant|reviewed by|author|signed(?: electronically)?(?: by)?|responsible doctor|clinical data|laboratory|echocardiography|diagnosis|dx|medications?|rx|allergy|smoking)\s*[:=]?))",
         # Compact notes can use "from Flat ...".
         r"(?i)\bfrom\s+(Flat\s+[^;\n|.]+)",
     ],
@@ -168,7 +168,8 @@ def detect_pii(note):
     # Compact record example:
     # fot example : "Keerthi Gupta / HYD439096 / born 08/11/1982"
     compact_name = (
-        r"(?m)^([A-Z][\w'-]+\s+[A-Z][\w'-]+)"
+        r"(?im)(?:^|\b(?:note|record|summary)\s+)"
+        r"([A-Z][\w'-]+\s+[A-Z][\w'-]+)"
         r"\s*/\s*(?:HYD|CHN|BER)"
     )
 
@@ -177,7 +178,7 @@ def detect_pii(note):
 
     # Another compact record example: "Anton Adler, born 23.05.1963"
    
-    born_name = r"(?m)^([A-Z][\w'-]+\s+[A-Z][\w'-]+),\s*born\b"
+    born_name = r"(?i)\b([A-Z][\w'-]+\s+[A-Z][\w'-]+),\s*born\b"
 
     for match in re.finditer(born_name, note):
         add_span(spans, *match.span(1), "PATIENT_NAME")
