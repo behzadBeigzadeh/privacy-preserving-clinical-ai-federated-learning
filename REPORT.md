@@ -1,45 +1,218 @@
-# Challenge report
+
+# Challenge Report
 
 ## 1. Executive summary
+This solution addresses three clinical tasks:
 
-This submission combines the Candidate prediction code with the reporting and test coverage prepared in the Amir project. Rule based processing removes the benchmark's personal identifiers and extracts the required clinical fields. A NumPy logistic model is trained with FedAvg across three hospital partitions; predictions average three fixed initialization seeds. The public evaluator records **37.88/40**: 15/15 for de-identification, 15/15 for extraction, and 7.88/10 for readmission prediction. The 30-case validation set has six positive outcomes. These are results on a small synthetic benchmark, not evidence of clinical performance. Standard predictions use non-private FedAvg. A separate client-level DP prototype is reported for the privacy exercise.
+1. Removing personally identifiable information from clinical notes
+2. Extracting structured clinical information from unstructured text
+3. Predicting 30-day readmission risk with federated learning
+
+The text-processing components use transparent rule-based methods. The prediction component is a small NumPy logistic-regression model trained with Federated Averaging (FedAvg) across three hospital partitions.A separate test version was created to help protect each hospital’s data while training the model.
+
+The public benchmark result is **37.88 / 40**:
+
+| Task | Score |
+|---|---:|
+| De-identification | 15 / 15 |
+| Structured extraction | 15 / 15 |
+| Readmission prediction | 7.88 / 10 |
+| Total | 37.88 / 40 |
+
+The evaluation covers 30 public validation cases, including six positive readmission outcomes. These results describe performance on a small synthetic benchmark and should not be interpreted as evidence of clinical effectiveness.
 
 ## 2. System architecture
 
-`run_submission.py` reads JSONL inputs, runs the text and risk components, and writes predictions and experiment artifacts. `src/baseline.py` implements PII detection, placeholder rendering, and clinical extraction. `src/federated.py` implements feature construction, logistic training, FedAvg, centralized and local references, metrics, and the DP prototype. The supplied `evaluator/evaluate.py` scores the final JSONL output.
+The solution is organized into four main components.
 
-Training rows are partitioned by hospital before FedAvg. Clients contribute model updates weighted by their local sample counts. The coordinator simulates all clients in one process; it does not provide network isolation or secure aggregation.
+| Component | Responsibility |
+|---|---|
+| `run_submission.py` | Reads input data, trains models, creates predictions, and writes experiment artifacts |
+| `src/baseline.py` | Detects personal identifiers, creates de-identified text, and extracts clinical fields |
+| `src/federated.py` | Builds model features and implements local, centralized, federated, and private training |
+| `evaluator/evaluate.py` | Scores the required prediction output against public validation labels |
+
+The training data are divided by hospital before federated training begins. Each hospital trains on its own records. The server combines local model updates using sample-weighted FedAvg.
+
 
 ## 3. De-identification
 
-The detector uses field cues and note formats to locate the eight required entity types. It returns offsets in the original note, sorts the spans, and renders placeholders while retaining text between spans. The detector is rule based and tuned to the supplied synthetic note layouts.
+The de-identification module uses pattern matching, field names, note structure, and contextual cues to identify protected information(spans).
 
-On the 30 public validation cases, entity detection, character-level detection, and rendered de-identified text each score 1.0. This is a development result because the public note formats are available. New names without context cues, unseen address layouts, OCR errors, and other document formats may be missed or over-redacted. An image workflow would need to map detected text offsets back to image regions and verify that the visual marks cover the source text.
+The detector covers the sensetive data, including names, patient identifiers, dates of birth, telephone numbers, addresses, docter names, and related personal details.
+
+Each detected entity is represented by its original character offsets. The system sorts detected spans and replaces them with the required placeholders while preserving the non-sensitive parts of the note.
+
+The public benchmark results are:
+
+| Metric | Score |
+|---|---:|
+| Entity detection | 1.0000 |
+| Character-level detection | 1.0000 |
+| Rendered de-identified text | 1.0000 |
+
+The rules were designed for the note formats available in the benchmark. They may require extension for unfamiliar document layouts, spelling mistakes, unlabelled names, or real-world clinical documentation that is very important for the improvments.
 
 ## 4. Structured extraction and standardization
 
-The extractor normalizes the benchmark's diagnosis and medication vocabulary, checks nearby context for negation and status, parses documented numeric fields, converts supported units, and returns null for missing values. Smoking and allergy values use the required categories. The public validation extraction score is 1.0. Since public examples informed the rules, this should not be treated as an independent estimate of hidden-set performance. The approach remains limited to its rules and vocabulary.
+The extraction module converts clinical note text into the structured fields required by the submission format.
+
+The system extracts and standardizes information such as:
+
+- Diagnoses
+- Medications
+- Allergy status
+- Smoking status
+- Numeric laboratory or clinical values
+- Hospital and admission-related information
+
+The extractor can distinguish between an active condition and a negated condition, or between an active medication and one that has been stopped.
+
+Missing information is represented as `null`. Supported numeric formats and units are normalized before being returned.
+
+The public structured extraction score is `1.0000`. Because the benchmark notes are public and informed rule development, this result should be treated as a development result rather than an independent estimate of performance on unseen clinical data.
 
 ## 5. Federated-learning experiment
 
-The model uses structured features and hospital identity: age, prior admissions, length of stay, emergency admission, sex indicators, and three hospital indicators. Numeric scales are fixed in code. Logistic training uses batch gradient updates, learning rate 1.0, and L2 penalty 0.001 on non-intercept coefficients.
+The readmission model is a regularized logistic-regression model implemented with NumPy.
 
-The training file contains 120 records across Berlin (42), Chennai (39), and Hyderabad (39). Each hospital performs one local gradient step per round; the default run uses 2,000 FedAvg rounds. Client updates are averaged in proportion to each hospital's record count. Centralized and per-site local models are computed as references. The final readmission probabilities average the three fixed FedAvg seeds 7, 19, and 43; the validation labels do not participate in training or prediction.
+The feature set includes:
 
-The public evaluator reports readmission score 0.7876, ROC-AUC 0.7986, average precision 0.7107, Brier score 0.1467, and log loss 0.4714. Per-site ROC-AUC is 0.9048 for Berlin, 1.0000 for Chennai, and 0.2222 for Hyderabad. Each site has only ten validation examples, and Hyderabad has one positive case, so those site metrics are highly unstable.
+- Age
+- Sex
+- Number of previous admissions
+- Length of stay
+- Emergency admission status
+- Hospital indicator variables
+
+The training dataset contains 120 records distributed across three hospital partitions:
+
+| Hospital | Training records |
+|---|---:|
+| Berlin | 42 |
+| Chennai | 39 |
+| Hyderabad | 39 |
+
+The federated model uses FedAvg. During each communication round, every hospital performs local training and sends a model update to the central coordinator. The coordinator averages client updates in proportion to each hospital's number of training records.
+
+The standard configuration uses:
+
+| Setting | Value |
+|---|---:|
+| FedAvg rounds | 2,000 |
+| Local epochs per round | 1 |
+| Learning rate | 1.0 |
+| L2 regularization | 0.001 |
+| Random seeds | 7, 19, 43 |
+
+Three fixed training seeds are used. The final prediction probability is the average of the three federated model outputs.
+
+A centralized model is also trained as a reference. It uses pooled training records and is not used as the final submission model.
+
+Public validation results for the final federated prediction are:
+
+| Metric | Value |
+|---|---:|
+| Readmission prediction score | 0.7876 |
+| ROC-AUC | 0.7986 |
+| Average precision | 0.7107 |
+| Brier score | 0.1467 |
+| Log loss | 0.4714 |
+
+The validation set is small. Each hospital has only ten validation records, and the Hyderabad partition has only one positive outcome. Therefore, hospital-level metrics should be interpreted carefully.
 
 ## 6. Privacy extension and threat model
 
-The separate prototype protects one hospital update under a trusted-server assumption. It clips each full client update to norm 0.5, weights updates using the fixed public site sizes, and adds fresh Gaussian noise. With noise multiplier 4.0 over 20 rounds and delta 1e-5, the zCDP conversion reports epsilon approximately 5.9899 for client-level replacement under fixed client counts.
+The project includes a separate client-level differentially private FedAvg prototype.
 
-This prototype is separate from the standard prediction path. Standard predictions and ordinary experiment diagnostics are not differentially private. The server sees each client update; there is no secure aggregation. The DP run does not calculate or export raw client training losses. The guarantee does not cover changing hospital counts, patient-level replacement, or other releases. It is a mathematical prototype, not a production privacy implementation.
+The protected unit is one hospital client update. The private prototype applies the following steps:
 
-## 7. Reproducibility and testing
+1. Clip each client update to a fixed norm
+2. Combine updates using fixed client weights
+3. Add Gaussian noise to the aggregated update
+4. Use zCDP accounting to estimate the privacy budget
 
-From the repository root, `python run_submission.py --train data/train.jsonl --input data/validation_inputs.jsonl --output outputs/validation_predictions.jsonl --artifacts-dir outputs/artifacts` creates predictions and the experiment and privacy summaries. Run `python evaluator/evaluate.py --inputs data/validation_inputs.jsonl --ground-truth data/validation_ground_truth.jsonl --predictions outputs/validation_predictions.jsonl --report outputs/validation_report.json` to score those predictions. Ground truth is read only by the evaluator in this workflow.
+The private prototype uses:
 
-The tests cover the supplied PII spans in original and flattened notes, the evaluator contract, FedAvg sample weighting, DP loss suppression and accounting, and prediction independence from evaluation labels. All 9 tests pass in the combined repository. Normal training uses fixed seeds. DP noise is fresh and therefore the DP artifact can vary across runs. The public benchmark run scored 37.8757/40 after integration; the risk-model algorithm is unchanged from Candidate.
+| Parameter | Value |
+|---|---:|
+| Clip norm | 0.5 |
+| Noise multiplier | 4.0 |
+| Private rounds | 20 |
+| Delta | 1e-5 |
+| Approximate epsilon | 5.9899 |
 
-## 8. Limitations and next steps
+The server can observe individual client updates before aggregation. Secure aggregation is not implemented.
 
-The dataset is synthetic and small, the validation set is public, and rule vocabulary was informed by public examples. Results may not generalize to unseen language or real clinical notes. The federated code is a single-process simulation, and the privacy path has a trusted coordinator and no secure aggregation. Hidden evaluation and a Docker image build have not been run for this combined folder.
+The private training version is separate from the main model. The final predictions use normal FedAvg, not differential privacy.  
+
+The private version does not save each hospital’s training loss. It is only a simple example to show how privacy can work during training.
+
+## 7. Reproducibility
+
+Run the following command from the repository root to generate predictions and experiment artifacts:
+
+```powershell
+python run_submission.py --train data/train.jsonl --input data/validation_inputs.jsonl --output outputs/validation_predictions.jsonl --artifacts-dir outputs/artifacts
+```
+
+Run the evaluator with:
+
+```powershell
+python evaluator/evaluate.py --inputs data/validation_inputs.jsonl --ground-truth data/validation_ground_truth.jsonl --predictions outputs/validation_predictions.jsonl --report outputs/validation_report.json
+```
+
+The main output files are:
+
+| File | Description |
+|---|---|
+| `outputs/validation_predictions.jsonl` | Final prediction records |
+| `outputs/validation_report.json` | Benchmark evaluation report |
+| `outputs/artifacts/experiment_summary.json` | Training and experiment details |
+| `outputs/artifacts/privacy_summary.json` | Privacy prototype details |
+
+## 8. Testing
+
+ The tests check:
+
+- Personal information detection
+- De-identification rendering
+- Structured extraction behavior
+- Submission output format
+- FedAvg sample weighting
+- Differential privacy loss suppression
+- Differential privacy accounting
+- Prediction independence from validation labels
+
+Run the test suite with:
+
+```powershell
+python -m pytest -q tests
+```
+
+The combined project test suite contains nine tests, all of which pass.
+
+## 9. Limitations
+
+This solution has some limits:
+
+- It uses a small, synthetic dataset.  
+- The validation data is public.  
+- The text rules may not work well with different note formats or new words.  
+- The federated learning system runs as a simulation on one computer.  
+- Secure aggregation is not included.  
+- The final predictions do not use differential privacy.  
+- The results should not be used for real medical decisions.
+
+## 10. Conclusion
+
+This project uses clinical text from different hospitals to:
+
+- Remove personal information
+- Extract important clinical details
+- Predict whether a patient may be readmitted
+
+It uses federated learning, so hospitals can train a shared model without sharing raw patient data. It also includes a privacy prototype using differential privacy.
+
+The system received full scores for de-identification and data extraction, and a good score for readmission prediction on public synthetic data. More testing with real clinical data is needed before real-world use..
+```
