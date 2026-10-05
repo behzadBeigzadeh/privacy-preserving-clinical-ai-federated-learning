@@ -24,7 +24,7 @@ These results are based on a small public synthetic validation dataset and shoul
 
 ## Project Structure
 
-
+```text
 .
 ├── data/                   # Training and validation data
 ├── evaluator/              # Benchmark evaluation script
@@ -42,6 +42,10 @@ These results are based on a small public synthetic validation dataset and shoul
 
 - Python 3.10 or later
 - pip
+- numpy>=2.0,<3
+- scikit-learn>=1.5,<2
+- pytest>=8,<10
+
 
 ## Setup
 
